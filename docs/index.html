@@ -5,7 +5,9 @@
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <title>Unity Web Player | カカシ工房</title>
     <link rel="shortcut icon" href="TemplateData/favicon.ico">
+    <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <link rel="stylesheet" href="TemplateData/style.css">
+    <style>html,body{margin:0;background:#1b2140;overflow:hidden}</style>
   </head>
   <body>
     <div id="unity-container" class="unity-desktop">
@@ -104,8 +106,9 @@
 
       } else {
         // Desktop style: Render the game canvas in a window that can be maximized to fullscreen:
-        canvas.style.width = "960px";
-        canvas.style.height = "600px";
+        // カカシ工房: どの画面幅でも全面表示（縦画面・小さいウィンドウ対応）
+        document.querySelector("#unity-container").className = "unity-mobile";
+        canvas.className = "unity-mobile";
       }
 
       document.querySelector("#unity-loading-bar").style.display = "block";
