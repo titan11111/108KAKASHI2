@@ -1,5 +1,7 @@
 # カカシ工房 — 農家爆受けのカカシを作れ！（Unity版）
 
+▶ **ブラウザで遊ぶ（iPhone Safari対応）**：https://titan11111.github.io/108KAKASHI2/
+
 Web版（Three.js）を参考に、Unityで**ゼロから**組み直したプロジェクトです。
 Prefab・外部アセット・画像は一切使わず、すべてC#のコードでプリミティブから3Dを生成します。
 
