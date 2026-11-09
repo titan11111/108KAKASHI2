@@ -15,8 +15,8 @@ namespace Kakashi
         public const bool Expand = false;
         /// <summary>【手順①】true で山だけ全部を新方式にする。</summary>
         public const bool ExpandHills = true;
-        /// <summary>【手順②】true で木を全部新方式にし、背景の木も足す。①の間は false（見本の1本だけ）。</summary>
-        public const bool ExpandTrees = false;
+        /// <summary>【手順②】true で木を全部新方式にし、背景の木も足す。見本確認OK（2026-11-09）で true。false に戻すと見本の1本だけ。</summary>
+        public const bool ExpandTrees = true;
         public static bool TreesExpanded { get { return Expand || ExpandTrees; } }
 
         /// <summary>見本の木の位置。畑の奥・柵の向こうで、通常のカメラ（カカシ正面）に入る場所。従来は(17,0,-6)で画面外だった。</summary>

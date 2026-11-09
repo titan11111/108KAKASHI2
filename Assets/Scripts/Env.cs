@@ -286,13 +286,15 @@ namespace Kakashi
             Geo.P(PrimitiveType.Cube, root, new Vector3(-13f, 1.0f, -9.98f), new Vector3(1.4f, 2.0f, 0.1f), Data.Hex("#3d2918"));
             // 木
             Vector3[] trees = { new Vector3(13f, 0, -10f), Scenery.Enabled ? Scenery.SampleTree : Scenery.OldSampleTree, new Vector3(-19f, 0, -3f), new Vector3(9f, 0, -15f) };
+            Transform treeRoot = root;   // 新方式の木はここにまとめて、最後に静的バッチ（同じ材質を1ドローコールに）
+            if (Scenery.Enabled) { treeRoot = new GameObject("Trees").transform; treeRoot.SetParent(root, false); }
             foreach (var tp in trees)
             {
                 if (Scenery.UseNewTree(tp))
                 {
                     // 新しい木：根元が太く枝分かれし、葉のかたまりが不規則（Scenery.cs）
                     int sd = Mathf.RoundToInt(tp.x * 7f + tp.z * 13f);
-                    Scenery.Tree(root, tp, sd, 6.8f + (Mathf.Abs(sd) % 5) * 0.45f, 3f + (Mathf.Abs(sd) % 4) * 2.5f, (Mathf.Abs(sd) % 8) * 45f);
+                    Scenery.Tree(treeRoot, tp, sd, 6.8f + (Mathf.Abs(sd) % 5) * 0.45f, 3f + (Mathf.Abs(sd) % 4) * 2.5f, (Mathf.Abs(sd) % 8) * 45f);
                     continue;
                 }
                 Geo.P(PrimitiveType.Cylinder, root, tp + new Vector3(0, 1.6f, 0), new Vector3(0.5f, 1.6f, 0.5f), Data.Hex("#6b4a28"));
@@ -300,7 +302,8 @@ namespace Kakashi
                 Geo.Sphere(root, tp + new Vector3(1.0f, 3.4f, 0.4f), 2.4f, Data.Hex("#4d7a34"), 0.05f);
                 Geo.Sphere(root, tp + new Vector3(-0.9f, 3.5f, -0.3f), 2.2f, Data.Hex("#355f27"), 0.05f);
             }
-            if (Scenery.Enabled && Scenery.TreesExpanded) Scenery.ExtraTrees(root);
+            if (Scenery.Enabled && Scenery.TreesExpanded) Scenery.ExtraTrees(treeRoot);
+            if (Scenery.Enabled && treeRoot != root) Scenery.BatchStatic(treeRoot);
             // 藁山（横に倒した俵）
             for (int i = 0; i < 4; i++)
             {

@@ -167,3 +167,22 @@ Editor:
 - 戻し方：`Scenery.EveningSky=false`（または`Enabled=false`）で空・フォグ・太陽・環境光が従来値に戻る
 - 【未確認】コンパイル、空の見た目（黄→赤紫の帯が見えるか／境目の霞）、夜・稲妻で空が暗く/光るか、雨粒が空に隠れないか、畝の影が青く長く見えるか、人物が暗くなりすぎないか
 - 括弧整合のみ確認済み。GitHub更新・プレイURL：未実施
+
+## Day110 追記7：GitHub更新（2026-11-09 21:44頃）
+- タイタンの「プッシュして」を受けて `titan11111/108KAKASHI2` の main へ push（コミット c3f70f7）。Assets/Scripts 11ファイル＋HANDOFF.md（Day110の農家リグ・天候・里山/木/夕焼け空を含む）。README.md はGitHub側が新しいため未反映
+- 【重要】`docs/`（GitHub Pagesのプレイ用WebGL）は今日11時台のビルドのまま＝**今日の変更はプレイURLに未反映**。Macで Tools/build_webgl.sh → docs/ へ入れて push が必要
+- Unityでのコンパイル・見た目の確認結果は、こちらでは未受領
+
+## Day110 追記8：木の全展開（2026-11-09 21:50頃）※コード変更のみ・Unity未確認
+- タイタンから「テストプレイ問題なし。進めて」（見本の木・山・空は問題なしとの報告）。それを受けて `Scenery.ExpandTrees=true`
+- バックアップ：`day110/backup_scripts_before_trees_expand.tgz`
+- 背景の木4本（13,-10）（見本7.5,-19.5）（-19,-3）（9,-15）が新方式になり、追加の木4本（21,-12）（-23,-7）（15,-17）（-6,-18）も出る。合計8本
+- 軽量化：新方式の木を`Trees`にまとめて静的バッチ（同色の材質は共有→幹/葉3色/草/丸影が本数によらず少ないドローコール）
+- 戻し方：`ExpandTrees=false`で見本の1本だけに戻る。`Enabled=false`で全部従来
+- 【未確認】コンパイル、8本の見た目（人物より目立たないか／小屋・藁山・柵と重ならないか／縦画面で端に出すぎないか）。括弧整合のみ
+- GitHub更新：この変更は未push（タイタンのテストプレイOK待ち）。プレイURLも今日の変更は未反映（WebGL再ビルド待ち）
+
+## Day110 追記9：GitHub更新（木の全展開・2026-11-09 21:5x）
+- 「最後までやって、携帯でチェックしたい」の依頼で、木の全展開(Env.cs/Scenery.cs)を `titan11111/108KAKASHI2` main へ push
+- 【未実施】WebGL再ビルド：Linux側ではUnity(Mac)を動かせないため。`docs/`(Pages)は今日11時台のビルドのまま＝**携帯で開いても今日の変更は出ない**
+- 次の最初の操作（Mac）：①Unityを閉じる → ②`Tools/build_webgl.sh` → ③`Build/WebGL` の中身を `docs/` へ上書き（Compression Format=Disabled、`.nojekyll`維持）→ ④push → ⑤`https://titan11111.github.io/108KAKASHI2/?fresh=1` を携帯で開く
