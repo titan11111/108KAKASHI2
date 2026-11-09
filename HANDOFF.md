@@ -186,3 +186,9 @@ Editor:
 - 「最後までやって、携帯でチェックしたい」の依頼で、木の全展開(Env.cs/Scenery.cs)を `titan11111/108KAKASHI2` main へ push
 - 【未実施】WebGL再ビルド：Linux側ではUnity(Mac)を動かせないため。`docs/`(Pages)は今日11時台のビルドのまま＝**携帯で開いても今日の変更は出ない**
 - 次の最初の操作（Mac）：①Unityを閉じる → ②`Tools/build_webgl.sh` → ③`Build/WebGL` の中身を `docs/` へ上書き（Compression Format=Disabled、`.nojekyll`維持）→ ④push → ⑤`https://titan11111.github.io/108KAKASHI2/?fresh=1` を携帯で開く
+
+## Day110 追記10：WebGL再ビルド＆Pages反映（2026-11-09 22:0x）
+- Unityヘッドレスビルド（Tools/build_webgl_hub.sh 新規：起動中Unityから本体を自動検出→閉じたら自動ビルド）。Unity=`.../Unity/Editors/6000.3.26f1/Unity.app`
+- **コンパイル：合格**（ログにerror CSなし。Scenery.cs の CS0162 到達不能コード警告のみ＝定数スイッチ由来）。WebGLビルド：完了（22:07 JST）
+- `Build/WebGL/Build/*` → `docs/Build/*` に反映（形式は従来と同じ .unityweb。docs/index.html・TemplateData・.nojekyll は変更なし）
+- 未確認：Pagesでの起動、携帯での見た目・操作・負荷、Editor Play。プレイURL: https://titan11111.github.io/108KAKASHI2/?fresh=1
