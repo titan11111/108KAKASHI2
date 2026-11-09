@@ -206,7 +206,7 @@ namespace Kakashi
             if (s["acc"] == "cd" && s["cloth"] == "red") { v += 4; r.Syn.Add("ギラ赤作戦 目+4"); }
             if (s["deco"] == "bell") nz += 6;
 
-            int poleBase = s["pole"] == "log" ? 72 : (s["pole"] == "frame" ? 55 : 30);
+            int poleBase = s["pole"] == "log" ? 68 : (s["pole"] == "frame" ? 52 : 36);
             r.Stab = Mathf.RoundToInt(poleBase + d * 0.25f);
             r.D = Mathf.Clamp(Mathf.RoundToInt(d * 1.3f), 0, 100);
             r.S = Mathf.Clamp(Mathf.RoundToInt(sy * 1.3f), 0, 100);
@@ -241,38 +241,40 @@ namespace Kakashi
                 evs.Add(new Ev { animal = "crow", key = "crow", fled = fled });
             }
 
-            // 猿
-            var mt = Triggers(s, "monkey");
-            if (mt.Count > 0)
-                evs.Add(new Ev { animal = "monkey", key = "monkey_bad", item = mt[0].name, slot = mt[0].slot });
-            else if (sc.D >= 30 && sc.V >= 25)
-                evs.Add(new Ev { animal = "monkey", key = "monkey_ok" });
-            else
-            {
-                string slot = s["acc"] != "none" ? "acc" : (s["deco"] != "none" ? "deco" : (s["hat"] != "none" ? "hat" : null));
-                if (slot == null) evs.Add(new Ev { animal = "monkey", key = "monkey_ok" });
-                else evs.Add(new Ev { animal = "monkey", key = "monkey_bad", slot = slot, item = Get(slot, s[slot]).name });
-            }
+            // ---- 襲来の発生条件（決定論）----
+            // 守り(D)＝怖がらせる力 / 目立ち(V)・音・光＝警戒させる力 / 安定度(Stab)＝突進や風に耐える力
+            // 好物の飾り（Trigs）があると、動物は怖がりにくくなり、狙いも定まる。
 
-            // 猪
+            // 猿：警戒度が低い時だけ飛びかかる。好物があっても、警戒度が高ければ諦める。
+            //   好物あり → 警戒度 50 未満で飛びかかる／好物なし → 外れやすい飾り(アクセント>飾り>帽子)があり、警戒度 28 未満の時だけ
+            var mt = Triggers(s, "monkey");
+            float wary = sc.D * 0.4f + sc.V * 0.4f + sc.Noise;
+            string loose = s["acc"] != "none" ? "acc" : (s["deco"] != "none" ? "deco" : (s["hat"] != "none" ? "hat" : null));
+            if (mt.Count > 0 && wary < 50f)
+                evs.Add(new Ev { animal = "monkey", key = "monkey_bad", item = mt[0].name, slot = mt[0].slot });
+            else if (mt.Count == 0 && loose != null && wary < 28f)
+                evs.Add(new Ev { animal = "monkey", key = "monkey_bad", slot = loose, item = Get(loose, s[loose]).name });
+            else
+                evs.Add(new Ev { animal = "monkey", key = "monkey_ok" });
+
+            // 猪：守り(D)が十分なら引き返す（好物があると怖がらず、守り 62 以上必要）。
+            //   突進を受けたら、安定度が 50（好物あり 58）以上で耐える。
             var bt = Triggers(s, "boar");
             string bk;
-            if (bt.Count > 0) bk = sc.Stab >= 70 ? "boar_hold" : "boar_bad";
-            else if (sc.D >= 45) bk = "boar_scare";
-            else bk = sc.Stab >= 60 ? "boar_hold" : "boar_bad";
+            if (sc.D >= (bt.Count > 0 ? 62 : 45)) bk = "boar_scare";
+            else bk = sc.Stab >= (bt.Count > 0 ? 58 : 50) ? "boar_hold" : "boar_bad";
             evs.Add(new Ev { animal = "boar", key = bk });
 
-            // 鹿
+            // 鹿：守り 40（好物あり 55）以上で寄りつかない。角突きは安定度 45（好物あり 52）以上で耐える。
             var dt = Triggers(s, "deer");
             string dk;
-            if (dt.Count > 0) dk = sc.Stab >= 65 ? "deer_hold" : "deer_bad";
-            else if (sc.D >= 40) dk = "deer_scare";
-            else dk = sc.Stab >= 55 ? "deer_hold" : "deer_bad";
+            if (sc.D >= (dt.Count > 0 ? 55 : 40)) dk = "deer_scare";
+            else dk = sc.Stab >= (dt.Count > 0 ? 52 : 45) ? "deer_hold" : "deer_bad";
             evs.Add(new Ev { animal = "deer", key = dk });
 
-            // 台風
-            evs.Add(new Ev { animal = "storm", key = sc.Stab >= 60 ? "storm_ok" : "storm_bad" });
-            if (s["hat"] != "none" && sc.Stab < 80)
+            // 台風：安定度 55 以上で耐える。帽子は安定度 75 未満だと飛ぶ。
+            evs.Add(new Ev { animal = "storm", key = sc.Stab >= 55 ? "storm_ok" : "storm_bad" });
+            if (s["hat"] != "none" && sc.Stab < 75)
                 evs.Add(new Ev { animal = "storm", key = "storm_hat", slot = "hat", item = Get("hat", s["hat"]).name });
             return evs;
         }

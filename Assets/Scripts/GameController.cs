@@ -23,7 +23,12 @@ namespace Kakashi
         Score score;
         List<Ev> evs;
         List<Result> results = new List<Result>();
-        List<GameObject> farmerObjs = new List<GameObject>();
+        List<GameObject> farmerObjs = new List<GameObject>();      // 審査役の3人
+        List<GameObject> extraObjs = new List<GameObject>();       // 見物の村人
+        Vector3[] judgeSlots = new Vector3[3];
+        Vector3[] extraSlots = new Vector3[4];
+        Coroutine judgeCo;
+        bool stormOn;
         List<Animal> animals = new List<Animal>();
         int slotIdx;
         int judgeIdx;
@@ -59,14 +64,24 @@ namespace Kakashi
             };
             scarecrow = new GameObject("Scarecrow").AddComponent<Scarecrow>();
 
-            Vector3[] pos = { new Vector3(-2.7f, 0, 2.5f), new Vector3(0, 0, 3.5f), new Vector3(2.7f, 0, 2.5f) };
+            // 農家の輪（かかしを囲む定位置）：審査役3人＋見物の村人4人。集合の演出までは隠しておく
+            float[] judgeAng = { -70f, 70f, 180f };
+            float[] extraAng = { -115f, 115f, -150f, 150f };
             for (int i = 0; i < Data.Farmers.Count; i++)
             {
+                judgeSlots[i] = RingPos(judgeAng[i]);
                 var fo = Env.MakeFarmer(Data.Farmers[i]);
-                fo.transform.position = pos[i];
-                fo.transform.rotation = Quaternion.LookRotation(new Vector3(-pos[i].x, 0, -pos[i].z));
-                fo.SetActive(false);
+                SetupFarmer(fo, judgeSlots[i], i);
                 farmerObjs.Add(fo);
+            }
+            string[] extraIds = { "hana", "gen", "ren", "hana" };
+            string[] extraCols = { "#8fb86a", "#b98a5a", "#d98c4a", "#7a8fc4" };
+            for (int i = 0; i < extraAng.Length; i++)
+            {
+                extraSlots[i] = RingPos(extraAng[i]);
+                var fo = Env.MakeFarmer(new Farmer { id = extraIds[i], color = Data.Hex(extraCols[i]) });
+                SetupFarmer(fo, extraSlots[i], i + 10);
+                extraObjs.Add(fo);
             }
 
             BuildUI();
@@ -309,7 +324,7 @@ namespace Kakashi
             introPanel.SetActive(true);
             scarecrow.Build(sel);
             cam.userControl = false;
-            cam.tYaw = 25; cam.tPitch = 10; cam.tDist = 6.5f;
+            cam.tYaw = 25; cam.tPitch = 10; cam.tDist = 6.5f; cam.tFov = 45f; cam.autoYaw = 0f;
         }
 
         void BackToBuild()
@@ -322,7 +337,7 @@ namespace Kakashi
             hudGo.SetActive(true);
             foreach (var a in animals) if (a != null) Destroy(a.gameObject);
             animals.Clear();
-            foreach (var f in farmerObjs) f.SetActive(false);
+            ResetFarmers();
             scarecrow.transform.rotation = Quaternion.identity;
             HideAllPanels();
             skipGo.SetActive(false);
@@ -330,7 +345,7 @@ namespace Kakashi
             buildPanel.SetActive(true);
             cam.userControl = true;
             cam.tTarget = new Vector3(0, 1.25f, 0);
-            cam.tYaw = 15; cam.tPitch = 12; cam.tDist = 5.4f;
+            cam.tYaw = 15; cam.tPitch = 12; cam.tDist = 5.4f; cam.tFov = 45f;
             scarecrow.Build(sel);
             ShowOptions();
             Refresh();
@@ -481,10 +496,9 @@ namespace Kakashi
             testing = true;
             HideAllPanels();
             skipGo.SetActive(true);
-            foreach (var f in farmerObjs) f.SetActive(true);
             scarecrow.transform.rotation = Quaternion.identity;
             cam.userControl = false;
-            cam.tYaw = 38; cam.tPitch = 13; cam.tDist = 8f; cam.tTarget = new Vector3(0, 1.2f, 0.6f);
+            ShotBase();
 
             ShowBanner("畑にさした！ 夕暮れ、動物たちが集まってくる…");
             yield return new WaitForSeconds(2.2f);
@@ -493,24 +507,203 @@ namespace Kakashi
             var storm = new List<Ev>();
             foreach (var e in evs)
             {
+                ShotBase();
                 if (e.animal == "crow") yield return StartCoroutine(CrowScene(e));
                 else if (e.animal == "monkey") yield return StartCoroutine(MonkeyScene(e));
                 else if (e.animal == "boar") yield return StartCoroutine(ChargeScene(e, "boar", new Vector3(8, 0, 0.2f), new Vector3(1, 0, 0), Vector3.forward, 80f, "猪が突進してくる！"));
                 else if (e.animal == "deer") yield return StartCoroutine(ChargeScene(e, "deer", new Vector3(0, 0, -8), new Vector3(0, 0, -1), Vector3.right, 80f, "鹿が角を構えて近づく…"));
                 else storm.Add(e);
             }
+            ShotBase();
             yield return StartCoroutine(StormScene(storm));
+
+            // 農家の人たちが、かかしの周りへぞろぞろ集まってくる
+            yield return StartCoroutine(GatherScene());
 
             Time.timeScale = 1f;
             skipGo.SetActive(false);
-            ShowBanner("農家の3人が見に来たよ！");
-            yield return new WaitForSeconds(1.6f);
+            ShowBanner("さあ、ひとりずつ見てもらおう！");
+            yield return new WaitForSeconds(1.2f);
             bannerGo.SetActive(false);
 
             results.Clear();
             foreach (var f in Data.Farmers) results.Add(Data.Judge(f, score, sel, evs));
             judgeIdx = 0;
             ShowJudge();
+        }
+
+        // =====================================================================
+        //  カメラ・農家まわりの共通部品
+        // =====================================================================
+        static Vector3 Flat(Vector3 v) { v.y = 0f; return v; }
+
+        static Vector3 Ring(float deg, float r)
+        {
+            return new Vector3(Mathf.Sin(deg * Mathf.Deg2Rad) * r, 0f, Mathf.Cos(deg * Mathf.Deg2Rad) * r);
+        }
+        static Vector3 RingPos(float deg) { return Ring(deg, 3.3f); }
+
+        void SetupFarmer(GameObject fo, Vector3 slot, int seed)
+        {
+            fo.transform.position = slot;
+            fo.transform.rotation = Quaternion.LookRotation(new Vector3(-slot.x, 0, -slot.z));
+            var rig = fo.GetComponent<FarmerRig>();
+            rig.lookAt = scarecrow.transform;
+            rig.seed = seed * 1.7f;
+            fo.SetActive(false);
+        }
+
+        void ResetFarmer(GameObject fo, Vector3 slot)
+        {
+            fo.SetActive(false);
+            fo.transform.position = slot;
+            fo.transform.rotation = Quaternion.LookRotation(new Vector3(-slot.x, 0, -slot.z));
+            var rig = fo.GetComponent<FarmerRig>();
+            rig.mode = FarmerRig.Mode.Idle; rig.speaking = false; rig.mood = 0.5f;
+        }
+
+        void ResetFarmers()
+        {
+            for (int i = 0; i < farmerObjs.Count; i++) ResetFarmer(farmerObjs[i], judgeSlots[i]);
+            for (int i = 0; i < extraObjs.Count; i++) ResetFarmer(extraObjs[i], extraSlots[i]);
+            stormOn = false;
+            cam.autoYaw = 0f; cam.tFov = 45f;
+            if (Weather.I != null) Weather.I.ResetNow();
+        }
+
+        /// <summary>画面の幅（縦画面の携帯は狭い）から、必要な半幅[m]が入るカメラ距離を出す。</summary>
+        float FitDist(float baseDist, float needHalf)
+        {
+            var c = cam.GetComponent<Camera>();
+            float th = Mathf.Tan(cam.tFov * 0.5f * Mathf.Deg2Rad);
+            float d = needHalf / (th * Mathf.Max(0.3f, c.aspect));
+            return Mathf.Clamp(Mathf.Max(baseDist, d), baseDist, 16f);
+        }
+
+        /// <summary>襲来テストの基本のカメラ。縦画面なら画角を広げて引く。</summary>
+        void ShotBase()
+        {
+            var c = cam.GetComponent<Camera>();
+            cam.userControl = false;
+            cam.autoYaw = 0f;
+            cam.tFov = c.aspect < 1f ? 60f : 45f;
+            cam.tYaw = 38f; cam.tPitch = 13f;
+            cam.tTarget = new Vector3(0, 1.2f, 0.6f);
+            cam.tDist = FitDist(8f, 2.4f);
+        }
+
+        /// <summary>動物とカカシの両方が画面に入るよう、カメラの狙いと距離を毎フレーム合わせる（縦画面の携帯でも見切れない）。</summary>
+        IEnumerator Frame(Animal a, float minDist)
+        {
+            var c = cam.GetComponent<Camera>();
+            while (a != null && a.gameObject.activeSelf)
+            {
+                Vector3 s = new Vector3(0f, 1.2f, 0.2f);
+                Vector3 p = a.transform.position + Vector3.up * 0.6f;
+                float yr = cam.tYaw * Mathf.Deg2Rad;
+                Vector3 right = new Vector3(Mathf.Cos(yr), 0f, -Mathf.Sin(yr));
+                float sep = Mathf.Abs(Vector3.Dot(p - s, right));
+                float th = Mathf.Tan(cam.tFov * 0.5f * Mathf.Deg2Rad);
+                float need = sep * 0.5f + 1.5f;
+                Vector3 mid = (s + p) * 0.5f;
+                cam.tTarget = new Vector3(mid.x, Mathf.Clamp(mid.y, 1.0f, 1.6f), mid.z);
+                cam.tDist = Mathf.Clamp(need / (th * Mathf.Max(0.3f, c.aspect)), minDist, 15f);
+                yield return null;
+            }
+        }
+
+        IEnumerator Face(Transform tr, Vector3 lookPoint)
+        {
+            Vector3 d = lookPoint - tr.position; d.y = 0f;
+            if (d.sqrMagnitude < 0.001f) yield break;
+            Quaternion from = tr.rotation, to = Quaternion.LookRotation(d);
+            float t = 0f;
+            while (t < 1f)
+            {
+                t += Time.deltaTime * 2.5f;
+                tr.rotation = Quaternion.Slerp(from, to, Mathf.Clamp01(t));
+                yield return null;
+            }
+        }
+
+        /// <summary>かかし（原点）をつっきらないよう、横を回りこんで歩く。</summary>
+        IEnumerator WalkAround(Transform tr, Vector3 to, float speed)
+        {
+            Vector3 a = Flat(tr.position), b = Flat(to);
+            Vector3 d = b - a;
+            float len = d.magnitude;
+            if (len > 0.1f)
+            {
+                float tt = Mathf.Clamp01(-Vector3.Dot(a, d) / (len * len));
+                Vector3 closest = a + d * tt;
+                if (closest.magnitude < 1.9f)
+                {
+                    Vector3 n = closest.magnitude > 0.05f ? closest.normalized : new Vector3(-d.z, 0f, d.x).normalized;
+                    if (closest.magnitude <= 0.05f && n.x < 0f) n = -n;
+                    Vector3 via = closest + n * (3.4f - closest.magnitude);
+                    yield return StartCoroutine(MoveTo(tr, via, speed, null));
+                }
+            }
+            yield return StartCoroutine(MoveTo(tr, to, speed, null));
+        }
+
+        // =====================================================================
+        //  農家の集合：「集まってきたよ」→ 小屋からぞろぞろ歩いてきて、かかしを囲む
+        // =====================================================================
+        IEnumerator GatherScene()
+        {
+            ShowBanner("農家の人たちが集まってきたよ！");
+            var c = cam.GetComponent<Camera>();
+            cam.userControl = false;
+            cam.tFov = c.aspect < 1f ? 60f : 45f;
+            cam.tYaw = 25f; cam.tPitch = 17f;
+            cam.tTarget = new Vector3(-1f, 1f, -0.5f);
+            cam.tDist = FitDist(11f, 4.6f);
+            cam.autoYaw = 5f;
+            yield return new WaitForSeconds(1.0f);
+
+            // 見物の村人と審査役を交互に並べて、順番に出発させる
+            var order = new List<KeyValuePair<GameObject, Vector3>>();
+            var angs = new List<float>();
+            float[] judgeAng = { -70f, 70f, 180f };
+            float[] extraAng = { -115f, 115f, -150f, 150f };
+            for (int i = 0; i < 4; i++)
+            {
+                order.Add(new KeyValuePair<GameObject, Vector3>(extraObjs[i], extraSlots[i])); angs.Add(extraAng[i]);
+                if (i < 3) { order.Add(new KeyValuePair<GameObject, Vector3>(farmerObjs[i], judgeSlots[i])); angs.Add(judgeAng[i]); }
+            }
+            var jobs = new List<IEnumerator>();
+            for (int i = 0; i < order.Count; i++)
+                jobs.Add(FarmerArrive(order[i].Key, angs[i], order[i].Value, i * 0.4f));
+            yield return StartCoroutine(All(jobs.ToArray()));
+            cam.autoYaw = 0f;
+            yield return new WaitForSeconds(0.6f);
+            bannerGo.SetActive(false);
+        }
+
+        IEnumerator FarmerArrive(GameObject fo, float slotAng, Vector3 slot, float delay)
+        {
+            var rig = fo.GetComponent<FarmerRig>();
+            yield return new WaitForSeconds(delay);
+            Vector3 start = new Vector3(-13f + Random.Range(-0.5f, 0.5f), 0f, -9.3f + Random.Range(0f, 1.2f));   // 小屋の戸口
+            float a0 = -125f + Random.Range(-6f, 6f);
+            Vector3 first = Ring(a0, 7f);
+            fo.transform.position = start;
+            fo.transform.rotation = Quaternion.LookRotation(first - start);
+            fo.SetActive(true);
+            rig.mode = FarmerRig.Mode.Walk;
+            const float speed = 4.2f;
+            yield return StartCoroutine(MoveTo(fo.transform, first, speed, null));
+            // 外周をぐるっと回って、自分の定位置へ（かかしの手前はつっきらない）
+            float delta = Mathf.DeltaAngle(a0, slotAng);
+            int steps = Mathf.Max(1, Mathf.CeilToInt(Mathf.Abs(delta) / 25f));
+            for (int s = 1; s <= steps; s++)
+            {
+                float k = s / (float)steps;
+                yield return StartCoroutine(MoveTo(fo.transform, Ring(a0 + delta * k, Mathf.Lerp(7f, 3.3f, k)), speed, null));
+            }
+            rig.mode = FarmerRig.Mode.Idle;
+            yield return StartCoroutine(Face(fo.transform, Vector3.zero));
         }
 
         // ---- 動き ----
@@ -566,18 +759,68 @@ namespace Kakashi
             scarecrow.transform.rotation = Quaternion.identity;
         }
 
+        /// <summary>倒れる時に地面との当たりを調べる対象（支柱は地面に刺さっているので除く）。</summary>
+        List<Renderer> FallRenderers()
+        {
+            var rs = new List<Renderer>();
+            Transform pole;
+            scarecrow.Parts.TryGetValue("pole", out pole);
+            foreach (var r in scarecrow.GetComponentsInChildren<Renderer>())
+                if (r != null && r.enabled && r.gameObject.activeInHierarchy && (pole == null || !r.transform.IsChildOf(pole)))
+                    rs.Add(r);
+            return rs;
+        }
+
+        float LowestY(List<Renderer> rs, Quaternion a, Quaternion b, float k)
+        {
+            scarecrow.transform.rotation = Quaternion.Slerp(a, b, k);
+            float m = float.MaxValue;
+            foreach (var r in rs) if (r != null) m = Mathf.Min(m, r.bounds.min.y);
+            return m;
+        }
+
+        /// <summary>地面に当たる手前までの倒れ具合（0..1）。横木や頭が地面にめり込む角度では止める。</summary>
+        float FallLimit(List<Renderer> rs, Quaternion a, Quaternion b)
+        {
+            const float floor = 0.01f;
+            float lo = 0f, hi = 1f;
+            if (LowestY(rs, a, b, 1f) >= floor) { scarecrow.transform.rotation = a; return 1f; }
+            for (int i = 0; i < 12; i++)
+            {
+                float mid = (lo + hi) * 0.5f;
+                if (LowestY(rs, a, b, mid) >= floor) lo = mid; else hi = mid;
+            }
+            scarecrow.transform.rotation = a;
+            return lo;
+        }
+
         IEnumerator Fall(Vector3 axis, float deg)
         {
-            KakashiAudio.Cue("impact");
+            var rs = FallRenderers();
             Quaternion a = scarecrow.transform.rotation, b = Quaternion.AngleAxis(deg, axis);
-            float t = 0;
+            float kMax = FallLimit(rs, a, b);                 // 地面に当たる所まで
+            Quaternion end = Quaternion.Slerp(a, b, kMax);
+            // ぐらっ…と傾いて、だんだん加速して倒れる
+            float t = 0f;
             while (t < 1f)
             {
-                t += Time.deltaTime * 3f;
-                scarecrow.transform.rotation = Quaternion.Slerp(a, b, t * t);
+                t += Time.deltaTime / 0.9f;
+                float k = Mathf.Clamp01(t);
+                scarecrow.transform.rotation = Quaternion.Slerp(a, end, k * k * k);
                 yield return null;
             }
-            scarecrow.transform.rotation = b;
+            KakashiAudio.Cue("impact");
+            // 地面で軽く弾んで止まる（めり込まないよう、弾みは起き上がる向きだけ）
+            Quaternion up = Quaternion.Slerp(a, b, kMax * 0.92f);
+            t = 0f;
+            while (t < 1f)
+            {
+                t += Time.deltaTime / 0.35f;
+                float k = Mathf.Clamp01(t);
+                scarecrow.transform.rotation = Quaternion.Slerp(end, up, Mathf.Sin(k * Mathf.PI));
+                yield return null;
+            }
+            scarecrow.transform.rotation = end;
         }
 
         IEnumerator StandUp()
@@ -586,8 +829,9 @@ namespace Kakashi
             float t = 0;
             while (t < 1f)
             {
-                t += Time.deltaTime * 1.5f;
-                scarecrow.transform.rotation = Quaternion.Slerp(a, Quaternion.identity, t);
+                t += Time.deltaTime / 1.1f;
+                float k = Mathf.Clamp01(t);
+                scarecrow.transform.rotation = Quaternion.Slerp(a, Quaternion.identity, k * k * (3f - 2f * k));
                 yield return null;
             }
             scarecrow.transform.rotation = Quaternion.identity;
@@ -647,23 +891,113 @@ namespace Kakashi
         }
 
         // ---- 猿 ----
+        /// <summary>放物線のジャンプ。腕を raiseTo 度まで伸ばしながら、体を少し反らせる。</summary>
+        IEnumerator Arc(Animal a, Vector3 to, float height, float sec, float raiseTo)
+        {
+            Transform tr = a.transform;
+            Vector3 from = tr.position;
+            Vector3 d = to - from; d.y = 0f;
+            Quaternion face = d.sqrMagnitude > 0.001f ? Quaternion.LookRotation(d) : tr.rotation;
+            float raise0 = a.armRaise;
+            a.moving = false;
+            float t = 0f;
+            while (t < 1f)
+            {
+                t += Time.deltaTime / sec;
+                float k = Mathf.Clamp01(t);
+                Vector3 p = Vector3.Lerp(from, to, k);
+                p.y += Mathf.Sin(k * Mathf.PI) * height;
+                tr.position = p;
+                tr.rotation = face * Quaternion.Euler(-Mathf.Sin(k * Mathf.PI) * 25f, 0f, 0f);
+                a.armRaise = Mathf.Lerp(raise0, raiseTo, Mathf.SmoothStep(0f, 1f, k));
+                yield return null;
+            }
+            tr.position = to;
+            tr.rotation = face;
+            a.armRaise = raiseTo;
+        }
+
+        Bounds PartBounds(string slot)
+        {
+            Bounds b = new Bounds(new Vector3(0f, 1.4f, 0f), Vector3.one * 0.5f);
+            Transform t;
+            if (scarecrow.Parts.TryGetValue(slot, out t) && t != null)
+            {
+                var rs = t.GetComponentsInChildren<Renderer>();
+                if (rs.Length > 0)
+                {
+                    b = rs[0].bounds;
+                    for (int i = 1; i < rs.Length; i++) b.Encapsulate(rs[i].bounds);
+                }
+            }
+            return b;
+        }
+
+        /// <summary>奪う物の複製を、猿の手に持たせる（元のパーツは呼び出し側で隠す）。</summary>
+        void Steal(string slot, Animal m)
+        {
+            Transform part;
+            if (!scarecrow.Parts.TryGetValue(slot, out part) || part == null || m.hand == null) return;
+            var holder = new GameObject("loot").transform;
+            holder.SetParent(m.hand, false);
+            holder.localPosition = Vector3.zero;
+            var clone = Instantiate(part.gameObject, part.position, part.rotation);
+            clone.SetActive(true);
+            foreach (var sw in clone.GetComponentsInChildren<Swayer>()) Destroy(sw);
+            var rs = clone.GetComponentsInChildren<Renderer>();
+            float s = 1f;
+            Vector3 center = part.position;
+            if (rs.Length > 0)
+            {
+                Bounds bb = rs[0].bounds;
+                for (int i = 1; i < rs.Length; i++) bb.Encapsulate(rs[i].bounds);
+                center = bb.center;
+                float maxE = Mathf.Max(bb.size.x, Mathf.Max(bb.size.y, bb.size.z));
+                s = Mathf.Min(1f, 0.45f / Mathf.Max(0.05f, maxE));
+            }
+            clone.transform.SetParent(holder, true);
+            clone.transform.position += holder.position - center;
+            holder.localScale = Vector3.one * s;
+        }
+
         IEnumerator MonkeyScene(Ev e)
         {
             ShowBanner("畑の端から猿がやってきた…");
             var m = Spawn("monkey", new Vector3(-8, 0, 3), Vector3.zero);
-            yield return StartCoroutine(MoveTo(m.transform, new Vector3(-1.7f, 0, 1.2f), 4.5f, m));
-            yield return new WaitForSeconds(0.6f);
+            StartCoroutine(Frame(m, 5.5f));
+            KakashiAudio.Cue("monkey");
+            yield return StartCoroutine(MoveTo(m.transform, new Vector3(-2.8f, 0, 1.7f), 4.5f, m));
+            yield return new WaitForSeconds(0.5f);
             if (e.key == "monkey_bad")
             {
-                yield return StartCoroutine(MoveTo(m.transform, new Vector3(-0.5f, 0, 0.7f), 6f, m));
-                ShowBanner("猿が「" + e.item + "」を奪った！");
+                // 奪う物のすぐ手前まで、ジャンプで飛びかかる
+                Bounds b = PartBounds(e.slot);
+                Vector3 dir = new Vector3(-0.75f, 0f, 0.66f).normalized;
+                float reach = 0.55f + Mathf.Min(0.6f, Mathf.Max(b.extents.x, b.extents.z));
+                Vector3 hang = new Vector3(b.center.x, Mathf.Clamp(b.center.y - 0.85f, 0f, 2.2f), b.center.z) + dir * reach;
+                ShowBanner("猿が飛びかかった！");
+                KakashiAudio.Cue("monkey");
+                m.transform.rotation = Quaternion.LookRotation(Flat(b.center - m.transform.position));
+                yield return new WaitForSeconds(0.25f);                                   // ため
+                yield return StartCoroutine(Arc(m, hang, 1.0f, 0.5f, 165f));              // ジャンプ！腕を上へ
+                Steal(e.slot, m);
                 scarecrow.SetPartVisible(e.slot, false);
-                yield return new WaitForSeconds(0.5f);
+                ShowBanner("猿が「" + e.item + "」を奪った！");
+                StartCoroutine(Wobble(0.35f));
+                yield return new WaitForSeconds(0.45f);
+                // 戦利品を抱えて飛び降り、逃走
+                Vector3 land = new Vector3(hang.x - 0.8f, 0f, hang.z + 0.5f);
+                yield return StartCoroutine(Arc(m, land, 0.6f, 0.4f, 150f));
                 yield return StartCoroutine(MoveTo(m.transform, new Vector3(-10, 0, -6), 8f, m));
             }
             else
             {
+                ShowBanner("猿は飛びかかろうとして…ためらった");
+                m.transform.rotation = Quaternion.LookRotation(Flat(new Vector3(0f, 0f, 0f) - m.transform.position));
+                yield return StartCoroutine(Arc(m, new Vector3(-1.9f, 0f, 1.4f), 0.4f, 0.35f, 40f));
+                yield return new WaitForSeconds(0.5f);
                 ShowBanner("猿は様子を見て、去っていった");
+                m.armRaise = 0f;
                 yield return StartCoroutine(MoveTo(m.transform, new Vector3(-10, 0, -4), 6f, m));
             }
             m.gameObject.SetActive(false);
@@ -675,6 +1009,7 @@ namespace Kakashi
         {
             ShowBanner(intro);
             var a = Spawn(kind, start, Vector3.zero);
+            StartCoroutine(Frame(a, 6.5f));   // 縦画面でも、動物がカカシと一緒に画面へ入る
             // dir は「カカシ側から見た動物のいる向き」
             Vector3 near = dir * 3.2f, hit = dir * 0.55f;
             yield return StartCoroutine(MoveTo(a.transform, near, 4f, a));
@@ -736,20 +1071,35 @@ namespace Kakashi
             Destroy(h.gameObject);
         }
 
+        IEnumerator Thunderstorm()
+        {
+            while (stormOn)
+            {
+                yield return new WaitForSeconds(Random.Range(1.1f, 2.4f));
+                if (!stormOn) break;
+                if (Weather.I != null) Weather.I.Strike();
+            }
+        }
+
         IEnumerator StormScene(List<Ev> storm)
         {
             Ev main = storm[0];
             Ev hat = storm.Count > 1 ? storm[1] : null;
-            ShowBanner("台風が来た！！ 風が唸りを上げる…");
-            Color amb = RenderSettings.ambientLight;
+            var w = Weather.I;
+            ShowBanner("日が暮れて…夜の台風が来た！！ 大雨だ！！");
+            cam.tPitch = 8f;
+            cam.tTarget = new Vector3(0, 1.3f, 0.5f);
+            cam.tDist = FitDist(7f, 2.6f);
+            stormOn = true;
+            StartCoroutine(Thunderstorm());
             float t = 0;
-            while (t < 2.2f)
+            while (t < 3.0f)
             {
                 t += Time.deltaTime;
-                float k = t / 2.2f;
+                float k = Mathf.Clamp01(t / 3.0f);
+                if (w != null) { w.Night = Mathf.SmoothStep(0f, 1f, k); Weather.RainAmount = k; }
                 Wind.Strength = Mathf.Lerp(0f, 3f, k);
-                cam.shake = 0.04f * k;
-                RenderSettings.ambientLight = Color.Lerp(amb, amb * 0.55f, k);
+                cam.shake = 0.035f * k;
                 yield return null;
             }
             if (hat != null)
@@ -767,17 +1117,19 @@ namespace Kakashi
             else ShowBanner("踏ん張った！ 台風を耐え抜いた！");
             yield return new WaitForSeconds(1.4f);
 
+            stormOn = false;
             t = 0;
-            while (t < 1.5f)
+            while (t < 2.5f)
             {
                 t += Time.deltaTime;
-                float k = t / 1.5f;
+                float k = Mathf.Clamp01(t / 2.5f);
+                if (w != null) { w.Night = 1f - Mathf.SmoothStep(0f, 1f, k); Weather.RainAmount = 1f - k; }
                 Wind.Strength = Mathf.Lerp(3f, 0f, k);
-                cam.shake = Mathf.Lerp(0.04f, 0f, k);
-                RenderSettings.ambientLight = Color.Lerp(amb * 0.55f, amb, k);
+                cam.shake = Mathf.Lerp(0.035f, 0f, k);
                 yield return null;
             }
-            Wind.Strength = 0f; cam.shake = 0f; RenderSettings.ambientLight = amb;
+            Wind.Strength = 0f; cam.shake = 0f;
+            if (w != null) w.ResetNow();
             if (fell) yield return StartCoroutine(StandUp());
         }
 
@@ -791,6 +1143,33 @@ namespace Kakashi
             return s;
         }
 
+        static int VisibleLen(string s)
+        {
+            int n = 0; bool tag = false;
+            foreach (char ch in s)
+            {
+                if (ch == '<') tag = true;
+                else if (ch == '>' && tag) tag = false;
+                else if (!tag) n++;
+            }
+            return n;
+        }
+
+        /// <summary>リッチテキストのタグはそのまま通して、見える文字だけ先頭から n 文字出す。</summary>
+        static string Reveal(string s, int n)
+        {
+            var sb = new System.Text.StringBuilder();
+            int shown = 0; bool tag = false;
+            foreach (char ch in s)
+            {
+                if (ch == '<') tag = true;
+                if (tag) { sb.Append(ch); if (ch == '>') tag = false; continue; }
+                if (shown >= n) continue;
+                sb.Append(ch); shown++;
+            }
+            return sb.ToString();
+        }
+
         void ShowJudge()
         {
             HideAllPanels();
@@ -798,28 +1177,73 @@ namespace Kakashi
             var r = results[judgeIdx];
             judgeName.text = r.f.name + "<size=30>（" + r.f.age + "）</size>";
             judgeRole.text = r.f.role;
-            judgeStars.text = Stars(r.Stars);
+            judgeStars.text = "";
             jD.Set(r.D); jS.Set(r.S); jV.Set(r.V);
-            judgeComment.text = "「" + r.Comment.Replace("\n", "\n\n") + "」\n\n<color=#a3acc8>採点  " + r.Total + " 点</color>";
+            judgeComment.text = "";
             nextLabel.text = judgeIdx < results.Count - 1 ? "つぎの農家へ" : "結果を見る";
-            cam.tTarget = new Vector3(0, 1.3f, 1.6f);
-            cam.tDist = 9f;
-            if (judgeIdx < farmerObjs.Count) StartCoroutine(Hop(farmerObjs[judgeIdx].transform));
+            if (judgeCo != null) StopCoroutine(judgeCo);
+            judgeCo = StartCoroutine(JudgeRoutine(judgeIdx));
         }
 
-        IEnumerator Hop(Transform t)
+        /// <summary>手前に農家（正面）、奥にカカシ。農家が歩いてきて、カカシを見ながら身振り手振りで批評する。</summary>
+        IEnumerator JudgeRoutine(int i)
         {
-            Vector3 p = t.position;
-            for (float k = 0; k < 1f; k += Time.unscaledDeltaTime * 3f)
+            var fo = farmerObjs[i];
+            var rig = fo.GetComponent<FarmerRig>();
+            var r = results[i];
+            string full = "「" + r.Comment.Replace("\n", "\n\n") + "」\n\n<color=#a3acc8>採点  " + r.Total + " 点</color>";
+            rig.speaking = false;
+            yield return null;   // 審査パネルが出て、カメラの表示範囲が決まるのを待つ
+
+            var c = cam.GetComponent<Camera>();
+            float a = Mathf.Max(0.3f, c.aspect);
+            bool tall = a < 1.25f;
+            cam.userControl = false; cam.autoYaw = 0f;
+            cam.tFov = tall ? 50f : 38f;
+            float th = Mathf.Tan(cam.tFov * 0.5f * Mathf.Deg2Rad);
+            cam.tYaw = 4f; cam.tPitch = 4f;
+            cam.tTarget = new Vector3(0f, 1.2f, 1.0f);
+            cam.tDist = Mathf.Clamp((tall ? 1.4f : 2.1f) / (th * a), 4.6f, 12f);
+
+            // 手前の立ち位置まで歩いてくる
+            Vector3 front = new Vector3(tall ? -0.4f : -0.9f, 0f, 2.3f);
+            rig.mode = FarmerRig.Mode.Walk;
+            yield return StartCoroutine(WalkAround(fo.transform, front, 3.6f));
+            // 体はカメラ寄り（正面）、頭でカカシをちらちら見ながら話す
+            Vector3 toCam = Flat(cam.transform.position - front).normalized;
+            Vector3 toScare = Flat(scarecrow.transform.position - front).normalized;
+            Vector3 face = Vector3.Slerp(toCam, toScare, 0.18f);
+            yield return StartCoroutine(Face(fo.transform, front + face));
+
+            rig.mood = Mathf.Clamp01((r.Stars - 1) / 4f);
+            rig.mode = FarmerRig.Mode.Talk;
+            rig.speaking = true;
+            int n = VisibleLen(full);
+            for (int k = 1; k <= n; k++)
             {
-                t.position = p + Vector3.up * Mathf.Sin(k * Mathf.PI) * 0.25f;
-                yield return null;
+                judgeComment.text = Reveal(full, k);
+                yield return new WaitForSeconds(0.035f);
             }
-            t.position = p;
+            judgeComment.text = full;
+            judgeStars.text = Stars(r.Stars);
+            rig.speaking = false;
+        }
+
+        IEnumerator ReturnToSlot(int i)
+        {
+            var fo = farmerObjs[i];
+            var rig = fo.GetComponent<FarmerRig>();
+            rig.speaking = false; rig.mood = 0.5f;
+            rig.mode = FarmerRig.Mode.Walk;
+            yield return StartCoroutine(WalkAround(fo.transform, judgeSlots[i], 3.6f));
+            rig.mode = FarmerRig.Mode.Idle;
+            yield return StartCoroutine(Face(fo.transform, Vector3.zero));
         }
 
         void NextJudge()
         {
+            if (judgeCo != null) StopCoroutine(judgeCo);
+            StartCoroutine(ReturnToSlot(judgeIdx));   // しゃべり終えた農家は、輪に戻る
             judgeIdx++;
             if (judgeIdx >= results.Count) ShowResult();
             else ShowJudge();
@@ -864,6 +1288,7 @@ namespace Kakashi
             resultText.text = s;
             resultPlain = plain;
             cam.userControl = true;
+            cam.autoYaw = 0f; cam.tFov = 45f;
             cam.tTarget = new Vector3(0, 1.25f, 0);
             cam.tDist = 6.5f;
         }
