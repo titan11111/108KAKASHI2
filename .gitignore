@@ -9,3 +9,6 @@ UserSettings/
 *.csproj
 *.sln
 .DS_Store
+
+# GitHub Pages 用のWebGLビルドは公開対象
+!/docs/Build/
